@@ -5,7 +5,7 @@ First set of simulations show that a random set of memory items can be used to c
 
 The present simulation looks at process assumptions that may increase the fidelity of probe reconstruction
 
-##Iteratively storing the echo during reconstruction
+## Iteratively storing the echo during reconstruction
 
 ### Generate a matrix of unique random vectors.
 
@@ -22,7 +22,7 @@ PatternMatrix<-unique.matrix(PatternMatrix)
 SizePatternM<-dim(PatternMatrix)
 ```
 
-###Store echo in memory set
+### Store echo in memory set
 
 The simulation determines whether there is a benefit to probe reconstruction gained by storing the echo in the memory set. This simulation stores the echo a single time.
 
@@ -80,16 +80,22 @@ MeanOrthonormal<-c(MeanOrthonormal,mean(MeanProbeAverageSimToSet,na.rm=TRUE))
 MaxOrthonormal<-c(MaxOrthonormal,mean(MaxProbeAverageSimToSet,na.rm=TRUE))
 }
 ```
+
 The plot below shows the mean similarity between the probe and the echo for each step of the monte-carlo simulation. The y-axis shows mean similarity, calculated as the correlation between the the probe and the echo. The x-axis shows each step of the monte-carlo simulation that increases the set-size of items in memory. All of the probes were not in the memory set. All of the items in the memory set were uniquely generated random vectors. Thus, there is an expectation of orthonormality between the all vectors in each simulation. The result clearly shows that the ability of the randomly generated memory set to reconstruct a randomly generated probe grows as a function of memory set-size. This result implies that randomly generated memory sets restricted in size to contain many patterns less than the total number of possible patterns, can on average, closely approximate reconstructions of the remaining patterns not contained in the memory set.
+
 ```{r}
 plot(MeanReconstructions)
 plot(MeanReconstructions1)
 ```
+
 The plot below is a sanity check to verify each probe was orthonormal in expectation to each of the items in the memory set. For each simulation, the probe was correlated with each of the items in the memory, and the average correlation was across items was stored for each simulation. Each point reflects the means of these averages for each step of the simulation. If the probe is orthonormal in expectation, then the average correlations should be zero on average. The graph shows this to be the case.
+
 ```{r}
 plot(MeanOrthonormal)
 ```
+
 Although each of the vectors are unique and randomly generated, and therefore have an expectation or orthonormality, random variation will cause some memory items to be more correlated to the probe than others. As part of the above analysis, the memory item with the maximum similarity to the probe on each simulation was stored. The plot shows the means of the max correlations between single items in the memory set and the probe. The results, not surprisingly, show that as the memory set-size increases it will contain at least one item with an increasingly higher correlation value to the probe.
+
 ```{r}
 plot(MaxOrthonormal)
 ```
