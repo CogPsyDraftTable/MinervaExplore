@@ -1,0 +1,368 @@
+---
+title: "MINERVA AL CSPC Transfer"
+output: html_document
+---
+
+## functions
+
+```{r,echo=FALSE}
+library(lsa)
+library(ggplot2)
+
+getEcho<-function(probe,mem,recP) {
+  simvals<-c()                                              # vector of similarities between probe and memory traces
+  for(j in 1:dim(mem)[1]){                                  # Compute Similarities
+    simvals[j]<-cosine(probe[1:75],mem[j,1:75])
+  }
+  echomat<-abs(mem[,1:100])*(simvals^3)                             # Multiply memory traces by activation value
+  echomat[echomat==Inf]<-0                                  # Set any Inf numbers to zero
+  echo<-colSums(echomat[,1:100]*sign(mem[,1:100]))+runif(100,-.01,.01)      # Sum memory traces, add noise
+  echo<-echo/max(abs(echo))# Normalize Echo
+  SimvalNormalize<-simvals
+  SimvalNormalize[SimvalNormalize<0]<-0
+  SimvalNormalize<-SimvalNormalize/sum(SimvalNormalize)
+  attentionW<-colSums(mem[,101:200]*SimvalNormalize)
+ list(echo=echo, intensity=sum(simvals),attention=attentionW)# Normalize resulting echo
+}
+
+
+setwd("~/Dropbox/DraftTable/Projects/MinervaExplore/MinervaAL_R_Crump")
+```
+
+# create cues
+
+```{r,echo=FALSE}
+# Create inputs
+###############
+CSPCtrials<-read.table(file="CSPCtransfer.txt",header=TRUE,sep="\t")
+InitTrials<-read.table(file="InitializeMemory2.txt",header=TRUE,sep="\t")
+
+CueSize<-25
+
+
+```
+
+# Run model
+
+```{r}
+LRate<-.15           # Learning Rate parameter, controls sampling noise, ranges between 0  and 1
+simSubs<-10         # Number of simulated subjects to run
+
+#Run simulated subjects
+########################
+AllSubData<-data.frame()
+
+for (subs in 1:simSubs){
+  
+# 4 colors, 4 words, 4 responses, two locations, 1 word dimension, 1 color dimension
+CueMatrix<-matrix(sign(runif(CueSize*16,-1,1)),ncol=CueSize,nrow=16)
+CueMatrix<-rbind(CueMatrix,rep(0,25))
+#create Word vectors that are part feature general (Word dimension) and specific (Word value)
+CueMatrixR<-CueMatrix
+
+
+#Create matrix for CSPC trials
+
+# CSPCmatrix<-matrix(rep(0,96*25*4),ncol=25*4,nrow=96)
+# for(i in 1:96){
+#   CSPCmatrix[i,]<-c(CueMatrix[CSPCtrials[i,]$MW,],
+#                 CueMatrix[CSPCtrials[i,]$MC,],
+#                 CueMatrix[CSPCtrials[i,]$ML,],
+#                 CueMatrix[CSPCtrials[i,]$MR,])
+# }
+
+#Create matrix to initialize word and color memory
+
+#initialize Wword
+WordInitmatrix<-matrix(rep(0,(16*6)*25*4),ncol=25*4,nrow=96)
+cnt<-0
+for(j in 1:6){
+  for(i in 1:16){
+    cnt<-cnt+1
+    WordInitmatrix[cnt,]<-c(CueMatrix[InitTrials[i,]$MW,],
+                        CueMatrix[InitTrials[i,]$MC,],
+                        CueMatrix[InitTrials[i,]$ML,],
+                        CueMatrix[InitTrials[i,]$MR,])
+  }
+}
+#initialize Color
+ColorInitmatrix<-matrix(rep(0,(16*1)*25*4),ncol=25*4,nrow=16)
+cnt<-0
+for(j in 1:1){
+  for(i in 17:32){
+    cnt<-cnt+1
+    ColorInitmatrix[cnt,]<-c(CueMatrix[InitTrials[i,]$MW,],
+                            CueMatrix[InitTrials[i,]$MC,],
+                            CueMatrix[InitTrials[i,]$ML,],
+                            CueMatrix[InitTrials[i,]$MR,])
+  }
+}
+
+InitMem<-rbind(WordInitmatrix,ColorInitmatrix)
+  
+  # Define trial Sequence
+  ########################
+  TrialSequence<-c(sample(1:96,replace=FALSE),
+                   sample(1:96,replace=FALSE))# Fixed order trial sequence
+  #TrialSequence<-c(sample(c(rep("A",25),rep("B",25))))   #Random order trial sequence
+  Ntrials<-length(TrialSequence)            # number of trials in TrialSequence
+  
+  # Initialize memory
+  ##################
+#   memory<-t(matrix(runif(75,-.1,.1)))                #adds one noisy memory trace
+#   for (pp in 1:2){
+#   memory<-rbind(memory,t(matrix(runif(75,-.1,.1))))  #adds another noisy memory trace
+#   }
+  
+    memory<-InitMem
+    randomStart<-matrix(runif(dim(memory)[1]*dim(memory)[2],-.1,.1),ncol=dim(memory)[2],nrow=dim(memory)[1])
+    memSamplingNoise<-matrix(rbinom(dim(memory)[1]*dim(memory)[2],1,LRate),ncol=dim(memory)[2],nrow=dim(memory)[1])
+    memory<-(memory+randomStart)*memSamplingNoise
+    memory<-cbind(memory,matrix(rep(LRate,112*100),ncol=100,nrow=112))
+    SubData<-data.frame(stringsAsFactors=FALSE)
+ # Learning<-matrix(0,ncol=8,nrow=Ntrials)  #Initialize matrices for storing learning results
+  
+    #Select input Stimulus from Trial Sequence
+    Wgeneral<-rbinom(25,1,.25)
+    Wspecific<-1-Wgeneral
+    CueMatrix[1:4,]<-sweep(CueMatrixR[1:4,],MARGIN=2,Wspecific,'*')
+    CueMatrix[1:4,]<-sweep(CueMatrix[1:4,],MARGIN=2,CueMatrixR[16,]*Wgeneral,'+')
+    #create Color vectors that are part feature general (color dimension) and specific (color value)
+    Cgeneral<-rbinom(25,1,.25)
+    Cspecific<-1-Cgeneral
+    CueMatrix[5:8,]<-sweep(CueMatrixR[5:8,],MARGIN=2,Cspecific,'*')
+    CueMatrix[5:8,]<-sweep(CueMatrix[5:8,],MARGIN=2,CueMatrixR[15,]*Cgeneral,'+')
+
+  #Run the model
+  ##############
+  for(iter in 1:Ntrials){
+
+    inputs<-c(CueMatrix[CSPCtrials[TrialSequence[iter],]$MW,],
+              CueMatrix[CSPCtrials[TrialSequence[iter],]$MC,],
+              CueMatrix[CSPCtrials[TrialSequence[iter],]$ML,],
+              CueMatrix[CSPCtrials[TrialSequence[iter],]$MR,])
+    #inputs<-CSPCmatrix[TrialSequence[iter],]
+    echo<-getEcho(inputs,memory,0)              #generate echo from memory, 1 is recP for recency weight
+    discrepancy<-inputs-echo$echo
+    AW<-1-(abs(discrepancy)/max(abs(discrepancy)))
+    inputs<-inputs*rbinom(100,1,echo$attention)
+    #aws<-rbinom(100,1,Aw)
+    #inputs<-aws*inputs
+    #echo<-getEcho(inputs,memory,0)
+    #discrepancy<-inputs-echo$echo
+    #discrepancy<-inputs[1:100]-echo[1:100]                    #compute discrepancy between input and memory
+    #Aw<-1-abs(discrepancy)/max(abs(discrepancy))
+    #aws<-rbinom(100,1,Aw)
+    #Measure similarity between echo response and each possible response
+    ##########################################################
+#     ResponseEval<-c(rep(0,4))
+#     rcnt<-0
+#     for(resp in 9:12){
+#       rcnt<-rcnt+1
+#       ResponseEval[rcnt]<-cosine(echo[76:100],CueMatrix[resp,])
+#     }
+    
+    ResponseEval<- cosine(echo$echo[76:100],t(CueMatrix[9:12,]))
+ResponseEval<-data.frame(subject=subs,trial=iter,
+                         red=ResponseEval[1],
+           green=ResponseEval[2],
+           blue=ResponseEval[3],
+           yellow=ResponseEval[4])
+  AWrecord<-c(mean(echo$attention[1:25]),mean(echo$attention[26:50]),mean(echo$attention[51:75]))
+  SubData<-rbind(SubData,data.frame(CSPCtrials[TrialSequence[iter],],ResponseEval,Intensity=echo$intensity,
+                                    Watt=AWrecord[1],
+                                    Catt=AWrecord[2],
+                                    Latt=AWrecord[3]))   
+  
+    
+    #Update Memory matrix
+    #Store discrepancy between probe and echo into memory, add noise
+    ################################################################
+    #memory<-rbind(memory,c(discrepancy*rbinom(100,1,LRate),AW))
+memory<-rbind(memory,c(discrepancy*rbinom(100,1,AW),AW))
+  #memory<-rbind(memory,inputs*rbinom(100,1,LRate))
+  }
+  
+  #tempDataFrame<-data.frame(Learning)
+ # tResult<-aggregate(as.numeric(tempDataFrame$X7),list(Congruency=tempDataFrame$X4),mean)
+  
+  #Store simulated subject results
+  #################################  
+    AllSubData<-rbind(AllSubData,SubData)
+    
+}    
+```
+
+# model Performance
+
+```{r}
+dim(AllSubData)
+MaxActivation<-apply(AllSubData[,15:18],1,max)
+MaxChoice<-apply(AllSubData[,15:18],1,which.max)
+Accuracy<-(AllSubData$MR-8)==MaxChoice
+PropActivation<-MaxActivation/apply(AllSubData[,15:18,],1,sum)
+blocks<-rep(rep(seq(1,8),each=24),simSubs)
+AllSubData<-cbind(AllSubData,MaxActivation,MaxChoice,Accuracy,PropActivation,blocks)
+
+```
+
+# Congruency effect by blocks
+
+```{r}
+AllMeans<-aggregate(MaxActivation~blocks*Congruency,AllSubData[AllSubData$Accuracy==TRUE,],mean)
+
+ggplot(AllMeans,aes(x=blocks, y=MaxActivation, group=Congruency))+
+  geom_line()+
+  geom_point(aes(shape=Congruency))+
+  theme_classic(base_size=12)+theme(
+    legend.position="top",
+    legend.direction="horizontal",
+    legend.title = element_blank()
+  )
+
+AllMeans<-aggregate(PropActivation~blocks*Congruency,AllSubData[AllSubData$Accuracy==TRUE,],mean)
+
+ggplot(AllMeans,aes(x=blocks, y=PropActivation, group=Congruency))+
+  geom_line()+
+  geom_point(aes(shape=Congruency))+
+  theme_classic(base_size=12)+theme(
+    legend.position="top",
+    legend.direction="horizontal",
+    legend.title = element_blank()
+  )
+
+AllMeans<-aggregate(PropActivation~blocks*Type*PC*Congruency,AllSubData[AllSubData$Accuracy==TRUE,],mean)
+
+ggplot(AllMeans,aes(x=blocks, y=PropActivation, group=Congruency))+
+  geom_line()+
+  geom_point(aes(shape=Congruency))+
+  theme_classic(base_size=12)+theme(
+    legend.position="top",
+    legend.direction="horizontal",
+    legend.title = element_blank()
+  )+facet_wrap(~Type*PC)
+
+AllMeans<-aggregate(PropActivation~blocks*PC*Congruency,AllSubData[AllSubData$Accuracy==TRUE & AllSubData$Type=="unbiased",],mean)
+
+ggplot(AllMeans,aes(x=PC, y=PropActivation, group=Congruency))+
+  geom_line()+
+  geom_point(aes(shape=Congruency))+
+  theme_classic(base_size=12)+theme(
+    legend.position="top",
+    legend.direction="horizontal",
+    legend.title = element_blank()
+  )+facet_wrap(~blocks)
+
+AllMeans<-aggregate(Intensity~blocks*PC*Congruency,AllSubData[AllSubData$Accuracy==TRUE & AllSubData$Type=="unbiased",],mean)
+
+ggplot(AllMeans,aes(x=PC, y=Intensity, group=Congruency))+
+  geom_line()+
+  geom_point(aes(shape=Congruency))+
+  theme_classic(base_size=12)+theme(
+    legend.position="top",
+    legend.direction="horizontal",
+    legend.title = element_blank()
+  )+facet_wrap(~blocks)
+
+
+
+AllMeans<-aggregate(MaxActivation~blocks*Type*PC*Congruency,AllSubData[AllSubData$Accuracy==TRUE,],mean)
+
+ggplot(AllMeans,aes(x=blocks, y=MaxActivation, group=Congruency))+
+  geom_line()+
+  geom_point(aes(shape=Congruency))+
+  theme_classic(base_size=12)+theme(
+    legend.position="top",
+    legend.direction="horizontal",
+    legend.title = element_blank()
+  )+facet_wrap(~Type*PC)
+
+AllMeans<-aggregate(Accuracy~blocks*Type*PC*Congruency,AllSubData,mean)
+
+ggplot(AllMeans,aes(x=blocks, y=Accuracy, group=Congruency))+
+  geom_line()+
+  geom_point(aes(shape=Congruency))+
+  theme_classic(base_size=12)+theme(
+    legend.position="top",
+    legend.direction="horizontal",
+    legend.title = element_blank()
+  )+facet_wrap(~Type*PC)
+
+AllMeans<-aggregate(Accuracy~blocks*PC*Congruency,AllSubData[AllSubData$Type=="unbiased",],mean)
+
+ggplot(AllMeans,aes(x=PC, y=Accuracy, group=Congruency))+
+  geom_line()+
+  geom_point(aes(shape=Congruency))+
+  theme_classic(base_size=12)+theme(
+    legend.position="top",
+    legend.direction="horizontal",
+    legend.title = element_blank()
+  )+facet_wrap(~blocks)
+
+AllMeans<-aggregate(Watt~PC*Congruency,AllSubData,mean)
+
+ggplot(AllMeans,aes(x=PC, y=Watt, group=Congruency))+
+  geom_line()+
+  geom_point(aes(shape=Congruency))+
+  theme_classic(base_size=12)+theme(
+    legend.position="top",
+    legend.direction="horizontal",
+    legend.title = element_blank()
+  )
+
+AllMeans<-aggregate(Watt~blocks*Congruency,AllSubData,mean)
+ggplot(AllMeans,aes(x=blocks, y=Watt, group=Congruency))+
+  geom_line()+
+  geom_point(aes(shape=Congruency))+
+  theme_classic(base_size=12)+theme(
+    legend.position="top",
+    legend.direction="horizontal",
+    legend.title = element_blank())
+
+AllMeans<-aggregate(Catt~blocks*Congruency,AllSubData,mean)
+ggplot(AllMeans,aes(x=blocks, y=Catt, group=Congruency))+
+  geom_line()+
+  geom_point(aes(shape=Congruency))+
+  theme_classic(base_size=12)+theme(
+    legend.position="top",
+    legend.direction="horizontal",
+    legend.title = element_blank())
+
+AllMeans<-aggregate(Watt~blocks*PC*Congruency,AllSubData,mean)
+ggplot(AllMeans,aes(x=blocks, y=Watt, group=Congruency))+
+  geom_line()+
+  geom_point(aes(shape=Congruency))+
+  theme_classic(base_size=12)+theme(
+    legend.position="top",
+    legend.direction="horizontal",
+    legend.title = element_blank())+facet_wrap(~PC)
+
+AllMeans<-aggregate(Catt~blocks*PC*Congruency,AllSubData,mean)
+ggplot(AllMeans,aes(x=blocks, y=Catt, group=Congruency))+
+  geom_line()+
+  geom_point(aes(shape=Congruency))+
+  theme_classic(base_size=12)+theme(
+    legend.position="top",
+    legend.direction="horizontal",
+    legend.title = element_blank())+facet_wrap(~PC)
+```
+
+```{r,eval=FALSE}
+ inputs<-c(CueMatrix[1,],
+              CueMatrix[7,],
+              CueMatrix[13,],
+              CueMatrix[9,])
+              
+              echo<-getEcho(inputs,memory,0)            
+              ResponseEval<- cosine(echo[76:100],t(CueMatrix[9:12,]))
+              ResponseEval
+              
+              
+    discrepancy<-inputs-echo 
+    plot(discrepancy)
+    attentionsampling<-rep(.5,100)
+    Aw<-1-abs(discrepancy)/max(abs(discrepancy))
+    aws<-rbinom(100,1,Aw)
+    inputs[1:75]<-aws[1:75]*inputs[1:75]
+    cosine(echo[26:50],CueMatrix[5,])
+```
