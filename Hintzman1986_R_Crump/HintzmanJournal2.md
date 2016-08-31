@@ -7,16 +7,8 @@ August 30, 2016
 Load libraries
 
 
-```r
-library(lsa) #has cosine function
-```
-
 ```
 ## Loading required package: SnowballC
-```
-
-```r
-library(ggplot2) # for plotting
 ```
 
 Each memory trace and each probe was a 23 unit vector. 
@@ -91,7 +83,7 @@ cor(Echo[11:23],CategoriesPrototypes[1,11:23]) # correlate echo pattern with pro
 ```
 
 ```
-## [1] 0.8664403
+## [1] 0.9066649
 ```
 
 ```r
@@ -109,4 +101,62 @@ ggplot(data=dframe, aes(y=Activations,x=Neuron))+
 ```
 
 ![](HintzmanJournal2_files/figure-html/unnamed-chunk-5-1.png)<!-- -->
+
+# Running multiple simulated Subjects
+
+Each simulated subject is shown 3 exemplars from each of three categories. Each of the category names is probed, and the retrieved echo pattern is compared to the prototype pattern. 
+
+
+```r
+#loop for each subject
+SimulatedDataFrame<-data.frame()
+for(subs in 1:20){
+  
+  #create three categories and prototypes
+  #######################
+  CategoriesPrototypes <- matrix(sign(runif(3*23,-1,1)),nrow=3,ncol=23)
+  
+  #Create Distortions
+  ###################
+  DistortedExemplars <- matrix(nrow = 9, ncol = 23) 
+  rowCounter <- 0  # initialize row counter to insert distortions into matrix
+  # repeat for each category (rows)
+  for (m in 1:3) {
+    # create x number of distortions per category
+    for (numberOfDistortions in 1:3) {
+      rowCounter <- rowCounter + 1  # increment on each loop, simple index
+      ones <- rep(1, 23)  # creates a vector of 23 ones
+      ones[sample(seq(11, 23), 2)] <- c(-1)  # randomly sample two units from the prototype pattern and change value to -1
+      DistortedExemplars[rowCounter, ] <- ones * CategoriesPrototypes[m, ]  # multiply prototype by distortion pattern and save in matrix
+    }
+  }
+  
+  #test each category label
+  #########################
+  SaveCorrelation<-c()
+  for (catLabel in 1:3){
+    CurrentProbe <- c(CategoriesPrototypes[catLabel,1:10],rep(0,13)) #try the first category name, followed by zeros
+    Echo <- getEcho(CurrentProbe,DistortedExemplars) # create the echo
+    SaveCorrelation <- c(SaveCorrelation,cor(Echo[11:23],CategoriesPrototypes[catLabel,11:23])) # correlate echo pattern with prototype pattern
+  }
+  
+  #Store the Data
+  ################
+  StoreData <- data.frame(subject=rep(subs,3),category=seq(1,3),Correlation=SaveCorrelation)
+  SimulatedDataFrame <- rbind(SimulatedDataFrame,StoreData)
+}
+
+# show the data in a table
+#########################
+PlotDF <- ddply(SimulatedDataFrame,.(category),summarise,Cor=mean(Correlation),SE=stde(Correlation))
+kable(xtable(PlotDF),format="markdown")
+```
+
+
+
+| category|       Cor|        SE|
+|--------:|---------:|---------:|
+|        1| 0.8441191| 0.0123192|
+|        2| 0.8442505| 0.0156078|
+|        3| 0.8310746| 0.0147765|
 
