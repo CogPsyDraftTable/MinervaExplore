@@ -88,7 +88,7 @@ cor(echo[11:23], categories_prototypes[1, 11:23])
 ```
 
 ```
-## [1] 0.7211728
+## [1] 0.8834737
 ```
 
 ```r
@@ -161,9 +161,9 @@ kable(xtable(summary_df),format="markdown")
 
 | category|       cor|        se|
 |--------:|---------:|---------:|
-|        1| 0.7936441| 0.0327855|
-|        2| 0.9189245| 0.0066908|
-|        3| 0.9453860| 0.0059963|
+|        1| 0.7940071| 0.0396063|
+|        2| 0.9019769| 0.0076728|
+|        3| 0.9328775| 0.0070201|
 
 # Ambiguous Recall Problem
 
@@ -208,14 +208,7 @@ for(subs in 1:20){
   
   simulation_df <- rbind(simulation_df, store_data)
 }
-```
 
-```
-## Warning in cor(echo[1:10], categories_prototypes[category_label, 1:10]):
-## the standard deviation is zero
-```
-
-```r
 # show the data in a table
 summary_df <- ddply(simulation_df,.(category),summarise, cor=mean(correlation), se=stde(correlation))
 kable(xtable(summary_df),format="markdown")
@@ -225,9 +218,9 @@ kable(xtable(summary_df),format="markdown")
 
 | category|       cor|        se|
 |--------:|---------:|---------:|
-|        1|        NA|        NA|
-|        2| 0.7144711| 0.0556001|
-|        3| 0.9239417| 0.0193004|
+|        1| 0.5756939| 0.0574359|
+|        2| 0.8735401| 0.0393699|
+|        3| 0.9312723| 0.0225852|
 
 ## Cleaning up the echo
 
@@ -279,3 +272,143 @@ ggplot(data=dframe, aes(y=activations, x=neuron_unit))+
 
 ![](HintzmanJournal2_files/figure-html/unnamed-chunk-8-1.png)<!-- -->
 
+# Basic Findings
+
+Directly from the paper:
+
+To evaluate the model's performance on the schema-abstraction task, 3, 6, and 9 high-level distortions of three prototypes were generated, respectively, and each was paired with the appropriate category name and encoded in SM as described earlier, for a total of 18 SM traces. 
+
+Classification testing was carried out using one probe per category representing each of the following conditions: (a) an old exemplar (one that was originally stored in SM), (b) the category prototype, (c) a new low-level distortion of the prototype, (d) a new high-level distortion of the prototype, and (e) a random pattern. 
+
+A forgetting cycle followed, during which each feature stored in SM--that is, each T(i, j)--either remained the same with Pr = .25 or reverted to zero with Pr = .75. Then testing was done again in the same way. Three hundred subjects were simulated by repeating the entire procedure, from the generation of new prototypes and names through the final test, 300 times.
+
+
+```r
+# loop for each subject
+simulation_df <- data.frame()
+for(subs in 1:100){
+  
+  # original category and prototype patterns
+  categories_prototypes <- matrix(sign(runif(3*23, -1, 1)), nrow=3, ncol=23)
+  
+  # 3, 6, and 9 high level distortions
+  distorted_exemplars <- matrix(nrow = 18, ncol = 23)  
+  i <- 0  
+  number_of_exemplars <- c(3, 6, 9)
+  for (m in 1:3) {
+    for (mm in 1:number_of_exemplars[m]){
+      i <- i + 1
+      #create distortion vector
+      distortion_vector <- rep(1, 23)
+      distortion_vector[sample(seq(11, 23), 4)] <- -1  
+      # multiply distortion and prototype and save in matrix
+      distorted_exemplars[i, ] <- distortion_vector * categories_prototypes[m, ]  
+    }
+  }
+  
+  # new low level distortions for test
+  low_test_distorted_exemplars <- matrix(nrow = 3, ncol = 23)  
+  i <- 0  
+  number_of_exemplars <- c(1, 1, 1)
+  for (m in 1:3) {
+    for (mm in 1:number_of_exemplars[m]){
+      i <- i + 1
+      #create distortion vector
+      distortion_vector <- rep(1, 23)
+      distortion_vector[sample(seq(11, 23), 2)] <- -1  
+      # multiply distortion and prototype and save in matrix
+      low_test_distorted_exemplars[i, ] <- distortion_vector * categories_prototypes[m, ]  
+    }
+  }
+  
+  # new high level distortions for test
+  high_test_distorted_exemplars <- matrix(nrow = 3, ncol = 23)  
+  i <- 0  
+  number_of_exemplars <- c(1, 1, 1)
+  for (m in 1:3) {
+    for (mm in 1:number_of_exemplars[m]){
+      i <- i + 1
+      #create distortion vector
+      distortion_vector <- rep(1, 23)
+      distortion_vector[sample(seq(11, 23), 4)] <- -1  
+      # multiply distortion and prototype and save in matrix
+      high_test_distorted_exemplars[i, ] <- distortion_vector * categories_prototypes[m, ]  
+    }
+  }
+  
+  # new random vectors for test
+  random_test <- matrix(sign(runif(3*23, -1, 1)), nrow=3, ncol=23)
+  
+  # combine all test vectors into a single matrix of test itemts
+  test_matrix <- matrix()
+  test_matrix <- rbind(distorted_exemplars[1,],
+                       distorted_exemplars[4,],
+                       distorted_exemplars[10,],
+                       categories_prototypes,
+                       low_test_distorted_exemplars,
+                       high_test_distorted_exemplars,
+                       random_test)
+  correct_category <- rep(seq(1,3),5)
+  
+  #test each pattern: 0 forgetting
+  save_answer <- c()
+  for (test_item in 1:15){
+    current_probe <- c(rep(0, 10), test_matrix[test_item, 11:23])
+    echo <- get_echo(current_probe, distorted_exemplars)
+    category_correlations <- cor(echo[1:10], t(categories_prototypes[, 1:10]))
+    choice <- which.max(category_correlations)
+    save_answer <- c(save_answer, choice)
+  }
+  
+  store_data <- data.frame(subject = rep(subs, 15),
+                           forgetting = rep(0,15),
+                           test = c(rep("old",3), 
+                                    rep("prototypes",3),
+                                    rep("low",3),
+                                    rep("high",3),
+                                    rep("random",3)),
+                           category = correct_category,
+                           choice = save_answer)
+  
+  simulation_df <- rbind(simulation_df, store_data)
+  
+  #test each pattern: 1 forgetting
+  forgetting_matrix <- matrix(rbinom(18*23, 1, .25), nrow=18, ncol=23)*distorted_exemplars
+  forgetting_matrix <- forgetting_matrix + matrix(runif(18*23, -.05, .05),nrow=18, ncol=23)
+  save_answer <- c()
+  for (test_item in 1:15){
+    current_probe <- c(rep(0, 10), test_matrix[test_item, 11:23])
+    echo <- get_echo(current_probe, forgetting_matrix)
+    category_correlations <- cor(echo[1:10], t(categories_prototypes[, 1:10]))
+    choice <- which.max(category_correlations)
+    save_answer <- c(save_answer, choice)
+  }
+  
+  store_data <- data.frame(subject = rep(subs, 15),
+                           forgetting = rep(1,15),
+                           test = c(rep("old",3), 
+                                    rep("prototypes",3),
+                                    rep("low",3),
+                                    rep("high",3),
+                                    rep("random",3)),
+                           category = correct_category,
+                           choice = save_answer)
+  
+  simulation_df <- rbind(simulation_df, store_data)
+}
+
+# plot the data
+simulation_df <- cbind(simulation_df, accuracy = simulation_df$category == simulation_df$choice)
+simulation_df$forgetting <- factor(simulation_df$forgetting)
+simulation_df$category <- factor(simulation_df$category)
+summary_df <- ddply(simulation_df,.(test, category, forgetting), summarise, acc = mean(accuracy))
+
+ggplot(data = summary_df, aes(y = acc, x = forgetting, group = test))+
+  geom_line(aes(linetype = test)) +
+  theme_classic(base_size = 12) +
+  ylab("Accuracy") +
+  xlab("Forgetting cycles") + 
+  facet_wrap(~category)
+```
+
+![](HintzmanJournal2_files/figure-html/unnamed-chunk-9-1.png)<!-- -->
