@@ -41,9 +41,9 @@ Distortions of each prototype pattern (exemplars of a category) were generated b
 # create empty matrix with room for 3, 6, and 9 exemplars from each category
 distorted_exemplars <- matrix(nrow = 18, ncol = 23)  
 i <- 0  
-number_of_distortions <- c(3, 6, 9)
+number_of_exemplars <- c(3, 6, 9)
 for (m in 1:3) {
-  for (mm in 1:number_of_distortions[m]){
+  for (mm in 1:number_of_exemplars[m]){
     i <- i + 1
     #create distortion vector
     distortion_vector <- rep(1, 23)
@@ -88,7 +88,7 @@ cor(echo[11:23], categories_prototypes[1, 11:23])
 ```
 
 ```
-## [1] 0.8580136
+## [1] 0.7211728
 ```
 
 ```r
@@ -110,7 +110,7 @@ ggplot(data=dframe, aes(y=activations, x=neuron_unit))+
 
 ## Running multiple simulated Subjects
 
-Each simulated subject is shown 3, 6 and 9 exemplars across three categories. Each of the category names is probed, and the retrieved echo pattern is compared to the prototype pattern. The correlation between the retrieved pattern and the original prototype should increase with the number of exemplars in memory. Category 1 has 3 exemplars, Category2 has 6 exemplars, and Category 3 has 9 exemplars.
+Each simulated subject is shown 3, 6 and 9 exemplars across three categories. Each of the category names is probed, and the retrieved echo pattern is compared to the prototype pattern. The correlation between the retrieved pattern and the original prototype should increase with the number of exemplars in memory. Category 1 has 3 exemplars, Category 2 has 6 exemplars, and Category 3 has 9 exemplars. Hintzman ran 20 simulated subjects.
 
 
 ```r
@@ -124,9 +124,9 @@ for(subs in 1:20){
   # 3, 6, and 9 distortions
   distorted_exemplars <- matrix(nrow = 18, ncol = 23)  
   i <- 0  
-  number_of_distortions <- c(3, 6, 9)
+  number_of_exemplars <- c(3, 6, 9)
   for (m in 1:3) {
-    for (mm in 1:number_of_distortions[m]){
+    for (mm in 1:number_of_exemplars[m]){
       i <- i + 1
       #create distortion vector
       distortion_vector <- rep(1, 23)
@@ -161,9 +161,121 @@ kable(xtable(summary_df),format="markdown")
 
 | category|       cor|        se|
 |--------:|---------:|---------:|
-|        1| 0.7985484| 0.0439799|
-|        2| 0.9175562| 0.0089125|
-|        3| 0.9463933| 0.0057922|
+|        1| 0.7936441| 0.0327855|
+|        2| 0.9189245| 0.0066908|
+|        3| 0.9453860| 0.0059963|
+
+# Ambiguous Recall Problem
+
+Same simulation as above except that memory is probed with the original prototype patterns to see whether MINERVA can retrieve the correct category names. The previous simulation used low distortion (2 units different) exemplars, the present simulation uses high distortion exemplars (4 units different).
 
 
+```r
+# loop for each subject
+simulation_df <- data.frame()
+for(subs in 1:20){
+  
+  # original category and prototype patterns
+  categories_prototypes <- matrix(sign(runif(3*23, -1, 1)), nrow=3, ncol=23)
+  
+  # 3, 6, and 9 distortions
+  distorted_exemplars <- matrix(nrow = 18, ncol = 23)  
+  i <- 0  
+  number_of_exemplars <- c(3, 6, 9)
+  for (m in 1:3) {
+    for (mm in 1:number_of_exemplars[m]){
+      i <- i + 1
+      #create distortion vector
+      distortion_vector <- rep(1, 23)
+      distortion_vector[sample(seq(11, 23), 4)] <- -1  
+      # multiply distortion and prototype and save in matrix
+      distorted_exemplars[i, ] <- distortion_vector * categories_prototypes[m, ]  
+    }
+  }
+  
+  #test each prototype pattern
+  save_correlation <- c()
+  for (category_label in 1:3){
+    current_probe <- c(rep(0, 10), categories_prototypes[category_label, 11:23])
+    echo <- get_echo(current_probe, distorted_exemplars)
+    save_correlation <- c(save_correlation,
+                          cor(echo[1:10], categories_prototypes[category_label, 1:10]))
+  }
+  
+  store_data <- data.frame(subject = rep(subs, 3),
+                           category = seq(1, 3),
+                           correlation = save_correlation)
+  
+  simulation_df <- rbind(simulation_df, store_data)
+}
+```
+
+```
+## Warning in cor(echo[1:10], categories_prototypes[category_label, 1:10]):
+## the standard deviation is zero
+```
+
+```r
+# show the data in a table
+summary_df <- ddply(simulation_df,.(category),summarise, cor=mean(correlation), se=stde(correlation))
+kable(xtable(summary_df),format="markdown")
+```
+
+
+
+| category|       cor|        se|
+|--------:|---------:|---------:|
+|        1|        NA|        NA|
+|        2| 0.7144711| 0.0556001|
+|        3| 0.9239417| 0.0193004|
+
+## Cleaning up the echo
+
+In the ambiguous recall example, probing memory with the prototype pattern resulted in the varying degress of success in clearly retrieving the associated category label. Hintzman showed that MINERVA can bootstrap itself out of this problem through an iterative retrieval process that allows the clarity of the category features to be improved across successive retrieval iterations.
+
+The iterative retrieval process involves the following steps. 
+
+1. Retrieve an echo
+2. Normalize the echo (divide by the max all units in the vector)
+3. Submit the normalized echo as probe to memory
+4. Retrieve new echo, normalize it, submit it back to memory etc.
+
+
+```r
+# function for iterative retrieval
+normalize_vector <- function(vector_input){
+  return(vector_input/max(abs(vector_input)))
+}
+
+iterative_retrieval <- function(probe, mem, iterations) {
+  normalized_echo <- normalize_vector(get_echo(probe, mem))
+  for (i in 1:iterations) {
+   normalized_echo <- normalize_vector(get_echo(normalized_echo, mem))
+  }
+  return(normalized_echo)
+}
+
+# plot results of iterative retrieval 
+current_probe <- c(rep(0, 10), categories_prototypes[3, 11:23])
+echo <- get_echo(current_probe, distorted_exemplars)
+echo1 <- iterative_retrieval(current_probe, distorted_exemplars, 1)
+echo2 <- iterative_retrieval(current_probe, distorted_exemplars, 2)
+
+activations <- c(categories_prototypes[3,1:10], 
+                 echo[1:10],
+                 echo1[1:10],
+                 echo2[1:10])
+cue <- rep(c("Original", "Echo_1","Echo_2","Echo_3"), each=10)
+neuron_unit <- rep(seq(1:10) ,4)
+dframe <- data.frame(cue, neuron_unit, activations)
+
+ggplot(data=dframe, aes(y=activations, x=neuron_unit))+
+  geom_bar(stat="identity", position = position_dodge(), fill = "gray") +
+  theme_classic(base_size = 12) +
+  ylab("Activation") +
+  xlab("Position") + 
+  facet_wrap(~cue)
+```
+
+![](HintzmanJournal2_files/figure-html/unnamed-chunk-8-1.png)<!-- -->
 
